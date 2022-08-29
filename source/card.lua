@@ -34,6 +34,17 @@ function Card.getDeck()
   return deck
 end
 
+function Card.getShuffledDeck()
+  local deck = Card.getDeck()
+
+  for i = #deck, 2, -1 do
+    local j = math.random(i)
+    deck[i], deck[j] = deck[j], deck[i]
+  end
+
+  return deck
+end
+
 local suitImageTable = gfx.imagetable.new("images/suits")
 local suitToImage = {
   diamonds = suitImageTable[1],
@@ -53,7 +64,7 @@ function Card:createImage()
   gfx.setColor(gfx.kColorBlack)
 
   gfx.drawRoundRect(0, 0, width, height, 2)
-  suitToImage[self.suit]:draw(3, 6)
+  suitToImage[self.suit]:draw(3, 3)
   gfx.drawText(self:rank_symbol(), 14, 3)
 
   gfx.popContext()

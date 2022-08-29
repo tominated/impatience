@@ -16,24 +16,52 @@ handSprite:setZIndex(100)
 handSprite:setAnimator(handAnim)
 handSprite:add()
 
-local cardSprites = {
-  gfx.sprite.new(Card:new("hearts", 1):createImage()),
-  gfx.sprite.new(Card:new("spades", 7):createImage()),
-  gfx.sprite.new(Card:new("diamonds", 13):createImage()),
-  gfx.sprite.new(Card:new("clubs", 2):createImage()),
-}
-
-for i, sprite in ipairs(cardSprites) do
-  local offset = i * 10
-  sprite:setCenter(0, 0)
-  sprite:moveTo(offset + 7, offset + 7)
-  sprite:add()
-end
-
 function handSprite:animateBy(x, y)
   local line = playdate.geometry.lineSegment.new(self.x, self.y, self.x + x, self.y + y)
   local anim = gfx.animator.new(150, line, playdate.easingFunctions.outQuint)
   handSprite:setAnimator(anim)
+end
+
+GameState = {}
+function GameState:new()
+  local gameState = {
+    deck = Card.getShuffledDeck(),
+    waste = {},
+    foundations = { {}, {}, {}, {} },
+    piles = { {}, {}, {}, {}, {}, {}, {} }
+
+  }
+
+  self.__index = self
+  return setmetatable(gameState, self)
+end
+
+function GameState:deal()
+  for i, pile in ipairs(self.piles) do
+    for _ = 1, i do
+      table.insert(pile, table.remove(self.deck))
+    end
+  end
+end
+
+local gameState = GameState:new()
+gameState:deal()
+
+local outerPadding = 7
+local width = 44
+local gap = 6
+
+for i, pile in ipairs(gameState.piles) do
+  for j, card in ipairs(pile) do
+    local sprite = gfx.sprite.new(card:createImage())
+    sprite:setCenter(0, 0)
+
+    local x = outerPadding + ((i - 1) * (width + gap))
+    local y = outerPadding + ((j - 1) * 13)
+    sprite:moveTo(x, y)
+
+    sprite:add()
+  end
 end
 
 function playdate.update()
