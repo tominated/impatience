@@ -55,16 +55,36 @@ local suitToImage = {
 
 local rankImageTable = gfx.imagetable.new("images/ranks")
 
-function Card:createImage()
-  local width = 44
-  local height = 50
-  local img = gfx.image.new(width, height)
+local CARD_WIDTH = 44
+local CARD_HEIGHT = 50
+local hiddenImage = nil
+
+function Card.createHiddenImage()
+  if hiddenImage ~= nil then
+    return hiddenImage
+  end
+
+  local img = gfx.image.new(CARD_WIDTH, CARD_HEIGHT)
   gfx.pushContext(img)
 
   gfx.setColor(gfx.kColorWhite)
-  gfx.fillRoundRect(0, 0, width, height, 2)
+  gfx.fillRoundRect(0, 0, CARD_WIDTH, CARD_HEIGHT, 2)
   gfx.setColor(gfx.kColorBlack)
-  gfx.drawRoundRect(0, 0, width, height, 2)
+  gfx.drawRoundRect(0, 0, CARD_WIDTH, CARD_HEIGHT, 2)
+
+  gfx.popContext()
+  hiddenImage = img
+  return img
+end
+
+function Card:createImage()
+  local img = gfx.image.new(CARD_WIDTH, CARD_HEIGHT)
+  gfx.pushContext(img)
+
+  gfx.setColor(gfx.kColorWhite)
+  gfx.fillRoundRect(0, 0, CARD_WIDTH, CARD_HEIGHT, 2)
+  gfx.setColor(gfx.kColorBlack)
+  gfx.drawRoundRect(0, 0, CARD_WIDTH, CARD_HEIGHT, 2)
 
   local suitImage = suitToImage[self.suit]
   local rankImage = rankImageTable[self.rank]
