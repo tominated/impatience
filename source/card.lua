@@ -53,6 +53,8 @@ local suitToImage = {
   spades = suitImageTable[4],
 }
 
+local rankImageTable = gfx.imagetable.new("images/ranks")
+
 function Card:createImage()
   local width = 44
   local height = 50
@@ -62,28 +64,15 @@ function Card:createImage()
   gfx.setColor(gfx.kColorWhite)
   gfx.fillRoundRect(0, 0, width, height, 2)
   gfx.setColor(gfx.kColorBlack)
-
   gfx.drawRoundRect(0, 0, width, height, 2)
-  suitToImage[self.suit]:draw(3, 3)
-  gfx.drawText(self:rank_symbol(), 14, 3)
+
+  local suitImage = suitToImage[self.suit]
+  local rankImage = rankImageTable[self.rank]
+  suitImage:draw(3, 3)
+  rankImage:draw(13, 3)
 
   gfx.popContext()
   return img
-end
-
-function Card:rank_symbol()
-  local rank = self.rank
-  if rank == 1 then
-    return "A"
-  elseif rank == 11 then
-    return "J"
-  elseif rank == 12 then
-    return "Q"
-  elseif rank == 13 then
-    return "K"
-  end
-
-  return tostring(rank)
 end
 
 ---@return boolean
