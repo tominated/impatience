@@ -6,27 +6,40 @@ import "CoreLibs/timer"
 import "card"
 
 local gfx <const> = playdate.graphics
+local geo <const> = playdate.geometry
+local cursorEase <const> = playdate.easingFunctions.outQuint
+
+local OUTER_PADDING = 7
+local CARD_WIDTH = 44
+local CARD_HEIGHT = 50
+local CARD_GAP = 6
+local CARD_GAP_Y = 13
+
+local FOUNDATION_POS_Y = OUTER_PADDING
+local COLUMNS_POS_Y = FOUNDATION_POS_Y + CARD_HEIGHT + CARD_GAP
 
 local handSprite = gfx.sprite.new(gfx.image.new("images/cursor-point"))
+handSprite:setCenter(0, 0)
 handSprite:setZIndex(100)
 handSprite:add()
 
 function handSprite:animateBy(x, y)
-  local line = playdate.geometry.lineSegment.new(self.x, self.y, self.x + x, self.y + y)
-  local anim = gfx.animator.new(150, line, playdate.easingFunctions.outQuint)
+  local line = geo.lineSegment.new(self.x, self.y, self.x + x, self.y + y)
+  local anim = gfx.animator.new(150, line, cursorEase)
   handSprite:setAnimator(anim)
 end
 
-function handSprite:animateTo(x, y)
-  local line = playdate.geometry.lineSegment.new(self.x, self.y, x, y)
-  local anim = gfx.animator.new(150, line, playdate.easingFunctions.outQuint)
+function handSprite:animateTo(point)
+  local line = geo.lineSegment.new(self.x, self.y, point.x, point.y)
+  local anim = gfx.animator.new(150, line, cursorEase)
   handSprite:setAnimator(anim)
 end
+
+local hiddenCardImage <const> = Card.createHiddenImage()
 
 CardState = {}
 function CardState:new(card)
-  local image = Card.createHiddenImage()
-  local sprite = gfx.sprite.new(image)
+  local sprite = gfx.sprite.new(hiddenCardImage)
   sprite:setCenter(0, 0)
 
   local cardState = {
@@ -46,20 +59,39 @@ function CardState:reveal()
   self.revealed = true
 end
 
+local cursorOffset <const> = geo.vector2D.new(22, 7)
+
+local deckCardPosition <const> = geo.point.new(OUTER_PADDING, OUTER_PADDING)
+
+local function wasteCardPosition(wasteIndex)
+  local x = OUTER_PADDING + CARD_WIDTH + CARD_GAP + ((wasteIndex - 1) * (CARD_WIDTH / 2))
+  return geo.point.new(x, FOUNDATION_POS_Y)
+end
+
+local function foundationCardPosition(foundationIndex)
+  local x = OUTER_PADDING + CARD_WIDTH + ((foundationIndex + 2) * (CARD_WIDTH + CARD_GAP))
+  return geo.point.new(x, FOUNDATION_POS_Y)
+end
+
+local function columnCardPosition(column, cardIndex)
+  local x = OUTER_PADDING + ((column - 1) * (CARD_WIDTH + CARD_GAP))
+  local y = COLUMNS_POS_Y + ((cardIndex - 1) * CARD_GAP_Y)
+  return geo.point.new(x, y)
+end
+
 CursorState = {
-  onDeck = { position = "deck", x = 7 + 20, y = 20 },
-  onWaste = { position = "waste", x = 7 + 44 + 7 + 20, y = 20 },
+  onDeck = { position = "deck", point = deckCardPosition + cursorOffset },
+  onWaste = { position = "waste", point = wasteCardPosition(1) + cursorOffset },
 }
 
 function CursorState.onFoundation(foundationIndex)
-  local x = 7 + 20 + ((foundationIndex + 2) * (44 + 6))
-  return { position = "foundation", foundationIndex = foundationIndex, x = x, y = 20 }
+  return { position = "foundation", foundationIndex = foundationIndex,
+    point = foundationCardPosition(foundationIndex) + cursorOffset }
 end
 
-function CursorState.onPile(pileIndex, cardIndex)
-  local x = 7 + 26 + ((pileIndex - 1) * (44 + 6))
-  local y = 78 + ((cardIndex - 1) * 13)
-  return { position = "pile", pileIndex = pileIndex, cardIndex = cardIndex, x = x, y = y }
+function CursorState.onColumn(pileIndex, cardIndex)
+  return { position = "pile", pileIndex = pileIndex, cardIndex = cardIndex,
+    point = columnCardPosition(pileIndex, cardIndex) + cursorOffset }
 end
 
 GameState = {}
@@ -95,14 +127,14 @@ function GameState:nextCursorPositions()
     local cardIndex = #piles[1]
     return {
       right = CursorState.onFoundation(1),
-      down = CursorState.onPile(1, cardIndex)
+      down = CursorState.onColumn(1, cardIndex)
     }
   elseif self.cursor.position == "waste" then
     local cardIndex = #piles[2]
     return {
       left = CursorState.onDeck,
       right = CursorState.onFoundation(1),
-      down = CursorState.onPile(2, cardIndex)
+      down = CursorState.onColumn(2, cardIndex)
     }
   elseif self.cursor.position == "foundation" then
     local foundationIndex = self.cursor.foundationIndex
@@ -122,7 +154,7 @@ function GameState:nextCursorPositions()
     return {
       left = left,
       right = right,
-      down = CursorState.onPile(pileIndex, #pile)
+      down = CursorState.onColumn(pileIndex, #pile)
     }
   elseif self.cursor.position == "pile" then
     local pileIndex = self.cursor.pileIndex
@@ -135,16 +167,16 @@ function GameState:nextCursorPositions()
 
     if pileIndex > 1 then
       local leftPileIndex = pileIndex - 1
-      left = CursorState.onPile(leftPileIndex, #piles[leftPileIndex])
+      left = CursorState.onColumn(leftPileIndex, #piles[leftPileIndex])
     end
 
     if pileIndex < 7 then
       local rightPileIndex = pileIndex + 1
-      right = CursorState.onPile(rightPileIndex, #piles[rightPileIndex])
+      right = CursorState.onColumn(rightPileIndex, #piles[rightPileIndex])
     end
 
     if cardIndex > 1 then
-      up = CursorState.onPile(pileIndex, cardIndex - 1)
+      up = CursorState.onColumn(pileIndex, cardIndex - 1)
     elseif pileIndex == 1 then
       up = CursorState.onDeck
     elseif pileIndex < 4 then
@@ -156,7 +188,7 @@ function GameState:nextCursorPositions()
     end
 
     if cardIndex < #currentPile then
-      down = CursorState.onPile(pileIndex, cardIndex + 1)
+      down = CursorState.onColumn(pileIndex, cardIndex + 1)
     end
 
     return { left = left, right = right, up = up, down = down }
@@ -166,23 +198,27 @@ end
 local gameState = GameState:new()
 gameState:deal()
 
-local outerPadding = 7
-local width = 44
-local gap = 6
+local deckSprite = gfx.sprite.new(hiddenCardImage)
+deckSprite:setCenter(0, 0)
+deckSprite:moveTo(deckCardPosition)
+deckSprite:add()
 
-local foundationsY = outerPadding
-local stacksY = foundationsY + 50 + gap
+for i, _ in ipairs(gameState.foundations) do
+  local foundationSprite = gfx.sprite.new(hiddenCardImage)
+  foundationSprite:setCenter(0, 0)
+  foundationSprite:moveTo(foundationCardPosition(i))
+  foundationSprite:add()
+end
 
 for i, pile in ipairs(gameState.piles) do
   for j, cardState in ipairs(pile) do
-    local x = outerPadding + ((i - 1) * (width + gap))
-    local y = stacksY + ((j - 1) * 13)
-    cardState.sprite:moveTo(x, y)
+    local position = columnCardPosition(i, j)
+    cardState.sprite:moveTo(position.x, position.y)
     cardState.sprite:add()
   end
 end
 
-handSprite:moveTo(gameState.cursor.x, gameState.cursor.y)
+handSprite:moveTo(gameState.cursor.point)
 local nextCursorPositions = gameState:nextCursorPositions()
 
 local directions = { "up", "down", "left", "right" }
@@ -194,7 +230,7 @@ function playdate.update()
       local nextCursorState = nextCursorPositions[direction]
       printTable(nextCursorState)
       if nextCursorState ~= nil then
-        handSprite:animateTo(nextCursorState.x, nextCursorState.y)
+        handSprite:animateTo(nextCursorState.point)
         gameState.cursor = nextCursorState
 
         nextCursorPositions = gameState:nextCursorPositions()
