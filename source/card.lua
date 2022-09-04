@@ -130,14 +130,22 @@ function Card:hasSameSuitAs(card)
   return self.suit == card.suit
 end
 
----@param card Card
+---@param card Card | nil
 ---@return boolean
 function Card:canPlayOnFoundation(card)
+  if not card then
+    return self.rank == 1
+  end
+
   return self:hasSameSuitAs(card) and self:succeeds(card)
 end
 
----@param card Card
+---@param card Card | nil
 ---@return boolean
-function Card:canPlayOnPile(card)
+function Card:canPlayOnColumn(card)
+  if not card then
+    return self.rank == 13
+  end
+
   return self:alternates(card) and card:succeeds(self)
 end

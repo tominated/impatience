@@ -21,6 +21,19 @@ function CardListNode:length()
   return self.tail:length() + 1
 end
 
+function CardListNode:nth(n)
+  if n == 1 then return self end
+  return self:nth(n - 1)
+end
+
+function CardListNode:last()
+  if not self.tail then
+    return self
+  end
+
+  return self.tail:last()
+end
+
 ---Creates an iterator over each of the nodes
 ---@return fun(): number, CardListNode | nil
 function CardListNode:iter_nodes()
