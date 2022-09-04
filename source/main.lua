@@ -48,6 +48,9 @@ local cursorOnWaste = { on = "waste" }
 ---@type Card[]
 local deck = Card.getShuffledDeck()
 
+---@type Card[]
+local discard = {}
+
 ---@type CardListNode | nil
 local waste = nil
 
@@ -88,6 +91,9 @@ local cursorSprite = gfx.sprite.new(cursorPointImage)
 cursorSprite:setCenter(0, 0)
 cursorSprite:setZIndex(1000)
 cursorSprite:add()
+
+local deckImage = gfx.image.new("images/deck")
+local deckEmptyImage = gfx.image.new("images/deck-empty")
 
 --#endregion
 
@@ -191,7 +197,7 @@ for columnIndex, column in ipairs(columns) do
   end
 end
 
-local deckSprite = gfx.sprite.new(hiddenCardImage)
+local deckSprite = gfx.sprite.new(deckImage)
 deckSprite:setCenter(0, 0)
 deckSprite:setZIndex(50)
 deckSprite:moveTo(deckCardPosition)
@@ -315,18 +321,28 @@ end
 
 local function cycleDeck()
   -- Hide the current waste pile and put at the back of the deck
-  local currentWaste = waste
-  while currentWaste do
-    local card = currentWaste.card
-    local sprite = cardSprites[card]
-    sprite:remove()
+  if waste then
+    for _, currentWaste in waste:iter_nodes() do
+      local card = currentWaste.card
+      local sprite = cardSprites[card]
+      sprite:remove()
 
-    table.insert(deck, card)
-    currentWaste = currentWaste.tail
+      table.insert(discard, card)
+    end
+
+    ---@type CardListNode | nil
+    waste = nil
   end
 
-  ---@type CardListNode | nil
-  waste = nil
+  -- If the deck is empty, swap it and the discard pile and exit
+  if #deck == 0 then
+    deck = discard
+    discard = {}
+
+    deckSprite:setImage(deckImage)
+
+    return
+  end
 
   -- Move cards from deck to the waste pile
   for wasteIndex = 1, NUM_WASTE_CARDS do
@@ -334,7 +350,9 @@ local function cycleDeck()
     local card = table.remove(deck, 1)
 
     -- if there's no more cards in the deck, exit early
-    if not card then return end
+    if not card then
+      break
+    end
 
     -- add to end of waste
     local newWaste = CardListNode:new(card)
@@ -365,9 +383,13 @@ local function cycleDeck()
     sprite:setAnimator(animator)
     sprite:add()
   end
+
+  if #deck == 0 then
+    deckSprite:setImage(deckEmptyImage)
+  end
 end
 
-local function positionColumnCards()
+local function repositionColumnCards()
   for columnIndex, column in ipairs(columns) do
     -- Position each hidden card
     local hiddenCount = 0
@@ -482,6 +504,8 @@ local function grabColumnCard(columnIndex, revealedIndex)
   local column = columns[columnIndex]
   local revealedCard = column.revealedCards and column.revealedCards:nth(revealedIndex)
   if not revealedCard then return end
+
+  cursorSprite:setImage(cursorGrabImage)
 
   holdingCard = revealedCard
   returnTo = { to = "column", columnIndex = columnIndex }
