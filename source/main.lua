@@ -88,6 +88,7 @@ local returnTo
 local cursorPointImage = gfx.image.new("images/cursor-point")
 local cursorGrabImage = gfx.image.new("images/cursor-grab")
 local cursorSprite = gfx.sprite.new(cursorPointImage)
+local cursorAnimator = nil
 cursorSprite:setCenter(0, 0)
 cursorSprite:setZIndex(1000)
 cursorSprite:add()
@@ -486,7 +487,9 @@ end
 
 local function grabWasteCard()
   if not waste then return end
+
   cursorSprite:setImage(cursorGrabImage)
+  cursorSprite:removeAnimator()
 
   holdingCard = waste:last()
   returnTo = { to = "waste" }
@@ -506,6 +509,7 @@ local function grabColumnCard(columnIndex, revealedIndex)
   if not revealedCard then return end
 
   cursorSprite:setImage(cursorGrabImage)
+  cursorSprite:removeAnimator()
 
   holdingCard = revealedCard
   returnTo = { to = "column", columnIndex = columnIndex }
@@ -519,9 +523,25 @@ local function grabColumnCard(columnIndex, revealedIndex)
   end
 end
 
+local function setCursorIdleAnimation()
+  local line = geo.lineSegment.new(cursorSprite.x, cursorSprite.y, cursorSprite.x, cursorSprite.y + 3)
+  local anim = gfx.animator.new(500, line)
+  anim.repeatCount = -1
+  anim.reverses = true
+  cursorAnimator = anim
+  cursorSprite:setAnimator(anim)
+end
+
+local function idleAnimation()
+  if cursorAnimator and cursorAnimator:ended() and not holdingCard then
+    setCursorIdleAnimation()
+  end
+end
+
 --#endregion
 
 cursorSprite:moveTo(cursorPosition())
+setCursorIdleAnimation()
 local nextCursors = getNextCursors()
 
 function playdate.update()
@@ -533,6 +553,7 @@ function playdate.update()
 
       local line = geo.lineSegment.new(cursorSprite.x, cursorSprite.y, position.x, position.y)
       local anim = gfx.animator.new(150, line, easeOutQuint)
+      cursorAnimator = anim
       cursorSprite:setAnimator(anim)
 
       if holdingCard then
@@ -565,6 +586,8 @@ function playdate.update()
       grabColumnCard(cursor.columnIndex, cursor.revealedIndex)
     end
   end
+
+  idleAnimation()
 
   playdate.graphics.sprite.update()
 end
