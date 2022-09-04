@@ -59,6 +59,9 @@ local CARD_WIDTH = 44
 local CARD_HEIGHT = 50
 local hiddenImage = nil
 
+---@type table<Card, unknown>
+local cardImageCache = {}
+
 function Card.createHiddenImage()
   if hiddenImage ~= nil then
     return hiddenImage
@@ -78,6 +81,9 @@ function Card.createHiddenImage()
 end
 
 function Card:createImage()
+  local cached = cardImageCache[self]
+  if cached then return cached end
+
   local img = gfx.image.new(CARD_WIDTH, CARD_HEIGHT)
   gfx.pushContext(img)
 
@@ -92,6 +98,7 @@ function Card:createImage()
   rankImage:draw(13, 3)
 
   gfx.popContext()
+  cardImageCache[self] = img
   return img
 end
 
