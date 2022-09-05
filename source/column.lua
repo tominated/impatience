@@ -1,114 +1,39 @@
----@class CardListNode
----@field card Card
----@field tail CardListNode | nil
-CardListNode = {}
+import "list"
 
----@param card Card
----@param tail CardListNode | nil
----@return CardListNode
-function CardListNode:new(card, tail)
-  local node = { card = card, tail = tail }
-  self.__index = self
-  return setmetatable(node, self)
-end
+---@alias Column { hiddenCards: Card[], revealedCards: List<Card> }
 
----@return integer
-function CardListNode:length()
-  if not self.tail then
-    return 1
-  end
-
-  return self.tail:length() + 1
-end
-
-function CardListNode:nth(n)
-  if n == 1 then return self end
-  return self:nth(n - 1)
-end
-
-function CardListNode:last()
-  if not self.tail then
-    return self
-  end
-
-  return self.tail:last()
-end
-
----Creates an iterator over each of the nodes
----@return fun(): number, CardListNode | nil
-function CardListNode:iter_nodes()
-  local next = self
-  local i = 1
-  return function()
-    local current = next
-    local currentI = i
-    if current ~= nil then
-      next = current.tail
-      i = i + 1
-      return currentI, current
-    end
-  end
-end
-
----@class Column
----@field faceDownCards Card[]
----@field revealedCards CardListNode | nil
 Column = {}
 
 ---@return Column
-function Column:new()
-  local column = { faceDownCards = {}, revealedCards = nil }
-  self.__index = self
-  return setmetatable(column, self)
+function Column.new()
+  return { hiddenCards = {}, revealedCards = nil }
 end
 
----@param n number # The index of the card starting at 1
----@return CardListNode | nil
-function Column:nthRevealedCardNode(n)
-  if self.revealedCards == nil then return nil end
-  for i, node in self.revealedCards:iter_nodes() do
-    if i == n then return node end
-  end
+---@param column Column
+function Column.promoteHidden(column)
+  if column.revealedCards then return end
+
+  ---@type Card | nil
+  local card = table.remove(column.hiddenCards)
+  if not card then return end
+
+  column.revealedCards = List.node(card)
 end
 
----@param cardNode CardListNode The card to move from the current column
----@param destination Column The destination column to add on the end
-function Column:moveToColumn(cardNode, destination)
-  -- Search thru revealedCards to find cardNode
-  local prevNode = nil
-  local currentNode = self.revealedCards
-  while true do
-    if not currentNode then return end
-    if currentNode == cardNode then break end
-    prevNode = currentNode
-    currentNode = currentNode.tail
-  end
+---@param column Column
+---@return fun(): number, Card | nil
+function Column.iterHidden(column)
+  return ipairs(column.hiddenCards)
+end
 
-  -- current node can never be nil by now
-  ---@cast currentNode CardListNode
+---@param column Column
+---@return fun(): number, Card | nil
+function Column.iterRevealed(column)
+  return List.iter(column.revealedCards)
+end
 
-  -- find the last node of the destination
-  local lastNode
-  for node in destination.revealedCards:iter_nodes() do
-    lastNode = node
-  end
-
-  -- add the card(s) to the end of the destination
-  if lastNode then
-    lastNode.tail = currentNode
-  else
-    destination.revealedCards = currentNode
-  end
-
-  if prevNode then
-    -- remove the cards from the current column
-    prevNode.tail = nil
-  else
-    -- no more revealed cards, so reveal one if possible
-    ---@type Card | nil
-    local hiddenCard = table.remove(self.faceDownCards)
-    if hiddenCard then
-      self.revealedCards = CardListNode:new(hiddenCard)
-    end
-  end
+---@param column Column
+---@return fun(): number, Card | nil
+function Column.iterRevealedRev(column)
+  return List.iterRev(column.revealedCards)
 end

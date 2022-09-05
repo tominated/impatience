@@ -4,6 +4,7 @@ import "CoreLibs/sprites"
 import "CoreLibs/timer"
 
 import "card"
+import "list"
 import "column"
 
 local gfx <const> = playdate.graphics
@@ -51,30 +52,30 @@ local deck = Card.getShuffledDeck()
 ---@type Card[]
 local discard = {}
 
----@type CardListNode | nil
+---@type List<Card> | nil
 local waste = nil
 
 ---@type table<Card, unknown>
 local cardSprites = {}
 
----@type table<1 | 2 | 3 | 4, CardListNode>
+---@type table<1 | 2 | 3 | 4, List<Card>>
 local foundations = {}
 
 ---@type table<1 | 2 | 3 | 4 | 5 | 6 | 7, Column>
 local columns = {
-  Column:new(),
-  Column:new(),
-  Column:new(),
-  Column:new(),
-  Column:new(),
-  Column:new(),
-  Column:new(),
+  Column.new(),
+  Column.new(),
+  Column.new(),
+  Column.new(),
+  Column.new(),
+  Column.new(),
+  Column.new(),
 }
 
 ---@type CursorOn
 local cursor = cursorOnDeck
 
----@type CardListNode | nil
+---@type List<Card>
 local holdingCard
 
 ---@alias ReturnToWaste { to: "waste" }
@@ -136,7 +137,7 @@ local function cursorPosition()
   if cursor.on == "deck" then
     return DECK_CARD_POSITION + CURSOR_CARD_OFFSET
   elseif cursor.on == "waste" then
-    local cardPosition = wasteCardPosition(waste and waste:length() or 1)
+    local cardPosition = wasteCardPosition(List.length(waste))
     return cardPosition + CURSOR_CARD_OFFSET
   elseif cursor.on == "foundation" then
     ---@cast cursor CursorOnFoundation
@@ -145,7 +146,7 @@ local function cursorPosition()
   elseif cursor.on == "column" then
     ---@cast cursor CursorOnColumn
     local column = columns[cursor.columnIndex]
-    local numHiddenCards = #column.faceDownCards
+    local numHiddenCards = #column.hiddenCards
     local cardPosition = columnCardPosition(cursor.columnIndex, numHiddenCards + 1, cursor.revealedIndex)
     return cardPosition + CURSOR_CARD_OFFSET
   end
@@ -168,20 +169,16 @@ end
 for columnIndex, column in ipairs(columns) do
   for cardIndex = 1, columnIndex do
     local card = table.remove(deck)
-
-    if cardIndex == columnIndex then
-      column.revealedCards = CardListNode:new(card)
-    else
-      table.insert(column.faceDownCards, card)
-    end
+    table.insert(column.hiddenCards, card)
   end
+  Column.promoteHidden(column)
 end
 
 -- for each card on the board, position, set the image and add to drawlist
 for columnIndex, column in ipairs(columns) do
   -- Position each hidden card and add to drawlist
   local hiddenCount = 1
-  for index, hiddenCard in ipairs(column.faceDownCards) do
+  for index, hiddenCard in Column.iterHidden(column) do
     hiddenCount = hiddenCount + 1
     local sprite = cardSprites[hiddenCard]
     sprite:moveTo(columnCardPosition(columnIndex, index))
@@ -189,10 +186,9 @@ for columnIndex, column in ipairs(columns) do
   end
 
   -- Position each revealed card, set image, and add to drawlist
-  for index, revealedCardNode in column.revealedCards:iter_nodes() do
-    local card = revealedCardNode.card
+  for index, card in Column.iterRevealed(column) do
     local sprite = cardSprites[card]
-    sprite:setImage(card:createImage())
+    sprite:setImage(Card.createImage(card))
     sprite:moveTo(columnCardPosition(columnIndex, hiddenCount, index))
     sprite:add()
   end
@@ -219,7 +215,8 @@ end
 ---@return table<direction, CursorOn>
 local function getNextCursors()
   if cursor.on == "deck" then
-    local revealedIndex = columns[1].revealedCards:length()
+    local revealedCards = columns[1].revealedCards
+    local revealedIndex = List.length(revealedCards)
     local right = waste
         and { on = "waste" }
         or { on = "foundation", foundationIndex = 1 }
@@ -228,7 +225,8 @@ local function getNextCursors()
       down = { on = "column", columnIndex = 1, revealedIndex = revealedIndex }
     }
   elseif cursor.on == "waste" then
-    local revealedIndex = columns[2].revealedCards:length()
+    local revealedCards = columns[2].revealedCards
+    local revealedIndex = List.length(revealedCards)
     return {
       left = cursorOnDeck,
       right = { on = "foundation", foundationIndex = 1 },
@@ -258,7 +256,7 @@ local function getNextCursors()
     -- Columns are offset by 3 cards
     local columnIndex = foundationIndex + 3
     local column = columns[columnIndex]
-    local revealedIndex = column.revealedCards and column.revealedCards:length() or 1
+    local revealedIndex = List.length(column.revealedCards) or 1
 
     ---@type CursorOn
     local down = { on = "column", columnIndex = columnIndex, revealedIndex = revealedIndex }
@@ -270,9 +268,7 @@ local function getNextCursors()
     local columnIndex = cursor.columnIndex
     local revealedIndex = cursor.revealedIndex
     local currentColumn = columns[columnIndex]
-    local currentColumnNumRevealed = currentColumn.revealedCards
-        and currentColumn.revealedCards:length()
-        or 0
+    local currentColumnNumRevealed = List.length(currentColumn.revealedCards)
 
     ---@type CursorOn | nil
     local left = nil
@@ -287,7 +283,7 @@ local function getNextCursors()
       local leftColumnIndex = columnIndex - 1
       local leftColumn = columns[leftColumnIndex]
       -- TODO: Handle skipping empty columns
-      local leftNumRevealed = leftColumn.revealedCards and leftColumn.revealedCards:length() or 1
+      local leftNumRevealed = List.length(leftColumn.revealedCards) or 1
       left = { on = "column", columnIndex = leftColumnIndex, revealedIndex = leftNumRevealed }
     end
 
@@ -295,7 +291,7 @@ local function getNextCursors()
       local rightColumnIndex = columnIndex + 1
       local rightColumn = columns[rightColumnIndex]
       -- TODO: Handle skipping empty columns
-      local rightNumRevealed = rightColumn.revealedCards and rightColumn.revealedCards:length() or 1
+      local rightNumRevealed = List.length(rightColumn.revealedCards) or 1
       right = { on = "column", columnIndex = rightColumnIndex, revealedIndex = rightNumRevealed }
     end
 
@@ -322,18 +318,13 @@ end
 
 local function cycleDeck()
   -- Hide the current waste pile and put at the back of the deck
-  if waste then
-    for _, currentWaste in waste:iter_nodes() do
-      local card = currentWaste.card
-      local sprite = cardSprites[card]
-      sprite:remove()
-
-      table.insert(discard, card)
-    end
-
-    ---@type CardListNode | nil
-    waste = nil
+  for _, card in List.iter(waste) do
+    local sprite = cardSprites[card]
+    sprite:remove()
+    table.insert(discard, card)
   end
+
+  waste = nil
 
   -- If the deck is empty, swap it and the discard pile and exit
   if #deck == 0 then
@@ -356,23 +347,10 @@ local function cycleDeck()
     end
 
     -- add to end of waste
-    local newWaste = CardListNode:new(card)
-    if waste then
-      -- go to end and set tail
-      local lastNode = waste
-      while true do
-        if not lastNode.tail then
-          lastNode.tail = newWaste
-          break
-        end
-        lastNode = lastNode.tail
-      end
-    else
-      waste = newWaste
-    end
+    waste = List.append(waste, card)
 
     local sprite = cardSprites[card]
-    sprite:setImage(card:createImage())
+    sprite:setImage(Card.createImage(card))
     sprite:moveTo(deckCardPosition)
     sprite:setZIndex(5 + wasteIndex)
 
@@ -390,122 +368,236 @@ local function cycleDeck()
   end
 end
 
-local function repositionColumnCards()
-  for columnIndex, column in ipairs(columns) do
-    -- Position each hidden card
-    local hiddenCount = 0
-    for index, hiddenCard in ipairs(column.faceDownCards) do
-      hiddenCount = hiddenCount + 1
-      local sprite = cardSprites[hiddenCard]
-      sprite:moveTo(columnCardPosition(columnIndex, index))
-    end
+---@param columnIndex number
+local function settleCardsInColumn(columnIndex)
+  local column = columns[columnIndex]
 
-    -- Position each revealed card and set image
-    for index, revealedCardNode in column.revealedCards:iter_nodes() do
-      local card = revealedCardNode.card
-      local sprite = cardSprites[card]
-      sprite:setImage(card:createImage())
-      sprite:moveTo(columnCardPosition(columnIndex, hiddenCount, index))
+  -- Ensure any cards are revealed if applicable
+  Column.promoteHidden(column)
+
+  -- Position each hidden card
+  local hiddenCount = 1
+  for index, hiddenCard in Column.iterHidden(column) do
+    hiddenCount = hiddenCount + 1
+    local sprite = cardSprites[hiddenCard]
+    sprite:setZIndex(hiddenCount)
+
+    local desiredPos = columnCardPosition(columnIndex, index)
+    if sprite.x ~= desiredPos.x or sprite.y ~= desiredPos.y then
+      sprite:moveTo(desiredPos)
+    end
+  end
+
+  -- Position each revealed card and set image
+  for index, card in Column.iterRevealed(column) do
+    local sprite = cardSprites[card]
+    sprite:setImage(Card.createImage(card))
+    sprite:setZIndex(hiddenCount + index)
+
+    local desiredPos = columnCardPosition(columnIndex, hiddenCount, index)
+    if sprite.x ~= desiredPos.x or sprite.y ~= desiredPos.y then
+      local currentPosition = geo.point.new(sprite:getPosition())
+      local anim = gfx.animator.new(150, currentPosition, desiredPos, easeOutQuint)
+      sprite:setAnimator(anim)
     end
   end
 end
 
--- local function placeCards()
---   if not holdingCard
---       or cursorDestination.destination == "deck"
---       or cursorDestination.destination == "waste"
---   then return end
+local function settleCardsInAllColumns()
+  for columnIndex, _ in ipairs(columns) do
+    settleCardsInColumn(columnIndex)
+  end
+end
 
---   if cursorDestination.destination == "foundation" then
---     ---@cast cursorDestination CursorDestinationFoundation
---     print("drop on foundation")
---   elseif cursorDestination.destination == "column" then
---     ---@cast cursorDestination CursorDestinationColumn
---     print("drop on column", cursorDestination.columnIndex, cursorDestination.revealedCardIndex)
---   end
--- end
+local function settleCardsInFoundation(foundationIndex)
+  local foundation = foundations[foundationIndex]
+
+  for i, card in List.iterRev(foundation) do
+    local cardSprite = cardSprites[card]
+
+    local desiredPos = foundationCardPosition(foundationIndex)
+
+    -- Last card should have higher z-index
+    if i == 1 then
+      if cardSprite.x ~= desiredPos.x or cardSprite.y ~= desiredPos.y then
+        local currentPosition = geo.point.new(cardSprite:getPosition())
+        local anim = gfx.animator.new(150, currentPosition, desiredPos, easeOutQuint)
+        cardSprite:setAnimator(anim)
+      end
+
+      cardSprite:setZIndex(2)
+      cardSprite:add()
+      return
+    end
+
+    -- Second last on stack should be visible if the top
+    -- has been picked up
+    if i == 2 then
+      cardSprite:setZIndex(1)
+      cardSprite:moveTo(desiredPos)
+      cardSprite:add()
+      return
+    end
+
+    -- Ensure the card is in the right place and hidden
+    cardSprite:moveTo(desiredPos)
+    cardSprite:remove()
+  end
+end
 
 local function dropHeldCard()
   if not holdingCard then return end
   if not returnTo then return end
 
-  local card = holdingCard.card
-  local cardSprite = cardSprites[card]
-
-  local returnPosition
+  local cardSprite = cardSprites[holdingCard.value]
 
   if returnTo.to == "waste" and waste then
-    returnPosition = wasteCardPosition(waste:length())
+    local returnPosition = wasteCardPosition(List.length(waste))
+    local line = geo.lineSegment.new(cardSprite.x, cardSprite.y, returnPosition.x, returnPosition.y)
+    local anim = gfx.animator.new(150, line, easeOutQuint)
+    cardSprite:setAnimator(anim)
   elseif returnTo.to == "foundation" then
     ---@cast returnTo ReturnToFoundation
-    returnPosition = foundationCardPosition(returnTo.foundationIndex)
+    settleCardsInFoundation(returnTo.foundationIndex)
   elseif returnTo.to == "column" then
     ---@cast returnTo ReturnToColumn
-
-    local column = columns[returnTo.columnIndex]
-    local revealedIndex = 1
-    local currentNode = column.revealedCards
-    while currentNode do
-      if currentNode == holdingCard then break end
-      revealedIndex = revealedIndex + 1
-      currentNode = currentNode.tail
-    end
-
-    returnPosition = columnCardPosition(returnTo.columnIndex, #column.faceDownCards + 1, revealedIndex)
+    settleCardsInColumn(returnTo.columnIndex)
   end
 
-  if not returnPosition then return end
-
   cursorSprite:setImage(cursorPointImage)
-
-  local line = geo.lineSegment.new(cardSprite.x, cardSprite.y, returnPosition.x, returnPosition.y)
-  local anim = gfx.animator.new(150, line, easeOutQuint)
-  cardSprite:setAnimator(anim)
-
   holdingCard = nil
   returnTo = nil
+end
+
+local cursorShakeOffset = geo.vector2D.new(2, 0)
+local function shakeCursor()
+  local currentPosition = cursorPosition()
+  local leftOfCursor = currentPosition - cursorShakeOffset
+  local rightOfCursor = currentPosition + cursorShakeOffset
+  local leftToRight = leftOfCursor .. rightOfCursor
+  local rightToLeft = rightOfCursor .. leftOfCursor
+  local anim = gfx.animator.new(150, { leftToRight, rightToLeft, leftToRight }, {})
+  cursorAnimator = anim
+  cursorSprite:setAnimator(anim)
 end
 
 local function placeHeldCard()
   if not holdingCard then return end
   if not returnTo then return end
 
+  if (
+      cursor.on == "waste" and returnTo.to == "waste"
+      ) or (
+      cursor.on == "foundation"
+          and returnTo.to == "foundation"
+      ) or (
+      cursor.on == "column"
+          and returnTo.to == "column"
+          and cursor.columnIndex == returnTo.columnIndex
+      ) then
+    dropHeldCard()
+    return
+  end
+
   if cursor.on == "foundation" then
     ---@cast cursor CursorOnFoundation
-    local foundation = foundations[cursor.foundationIndex]
-    local topFoundation = foundation and foundation:last()
-    if not holdingCard.card:canPlayOnFoundation(topFoundation and topFoundation.card) then return end
+    if List.tail(holdingCard) then return end
 
-    -- do stuff
+    local foundation = foundations[cursor.foundationIndex]
+
+    ---@type Card | nil
+    local foundationCard = List.last(foundation)
+
+    if not Card.canBuildUp(foundationCard, holdingCard.value) then
+      return
+    end
+
+    foundations[cursor.foundationIndex] = List.concat(foundation, holdingCard)
+
+    if returnTo.to == "column" then
+      ---@cast returnTo ReturnToColumn
+      local column = columns[returnTo.columnIndex]
+      column.revealedCards = List.remove_sublist(column.revealedCards, holdingCard)
+      settleCardsInColumn(returnTo.columnIndex)
+    elseif returnTo.to == "waste" then
+      ---@cast returnTo ReturnToWaste
+      waste = List.remove_sublist(waste, holdingCard)
+    end
+
+    cursorSprite:setImage(cursorPointImage)
+    holdingCard = nil
+    returnTo = nil
+    settleCardsInFoundation(cursor.foundationIndex)
   elseif cursor.on == "column" then
     ---@cast cursor CursorOnColumn
-    local column = columns[cursor.columnIndex]
-    local revealedCard = column.revealedCards and column.revealedCards:last()
-    if not holdingCard.card:canPlayOnColumn(revealedCard and revealedCard.card) then return end
+
+    print("placing on column?")
+
+    local destColumn = columns[cursor.columnIndex]
+    ---@type Card | nil
+    local destColumnCard = List.last(destColumn.revealedCards)
+    print("column card")
+    printTable(destColumnCard)
+    if not Card.canBuildDown(destColumnCard, holdingCard.value) then return end
+
+    destColumn.revealedCards = List.concat(destColumn.revealedCards, holdingCard)
+
+    if returnTo.to == "column" then
+      ---@cast returnTo ReturnToColumn
+      local srcColumn = columns[returnTo.columnIndex]
+      srcColumn.revealedCards = List.remove_sublist(srcColumn.revealedCards, holdingCard)
+      settleCardsInColumn(returnTo.columnIndex)
+    elseif returnTo.to == "waste" then
+      ---@cast returnTo ReturnToWaste
+      waste = List.remove_sublist(waste, holdingCard)
+    end
+
+    cursorSprite:setImage(cursorPointImage)
+    holdingCard = nil
+    returnTo = nil
+    settleCardsInColumn(cursor.columnIndex)
   end
 end
 
 local function grabWasteCard()
-  if not waste then return end
+  local wasteCard = List.lastNode(waste)
+  if not wasteCard then return end
 
   cursorSprite:setImage(cursorGrabImage)
   cursorSprite:removeAnimator()
 
-  holdingCard = waste:last()
+  holdingCard = wasteCard
   returnTo = { to = "waste" }
+  ---@cast holdingCard Card
 
   local currentCursorPosition = cursorPosition()
-  for i, node in holdingCard:iter_nodes() do
-    local cardSprite = cardSprites[node.card]
-    local hoverPosition = currentCursorPosition + HOLDING_CARD_OFFSET
-    cardSprite:setZIndex(i + 100)
-    cardSprite:moveTo(hoverPosition)
-  end
+  local cardSprite = cardSprites[wasteCard.value]
+  local hoverPosition = currentCursorPosition + HOLDING_CARD_OFFSET
+  cardSprite:setZIndex(100)
+  cardSprite:moveTo(hoverPosition)
+end
+
+local function grabFoundationCard(foundationIndex)
+  local foundation = foundations[foundationIndex]
+  local nodeToHold = foundation and List.lastNode(foundation)
+  if not nodeToHold then return end
+
+  cursorSprite:setImage(cursorGrabImage)
+  cursorSprite:removeAnimator()
+
+  holdingCard = nodeToHold
+  returnTo = { to = "foundation", foundationIndex = foundationIndex }
+
+  local currentCursorPosition = cursorPosition()
+  local cardSprite = cardSprites[nodeToHold.value]
+  local hoverPosition = currentCursorPosition + HOLDING_CARD_OFFSET
+  cardSprite:setZIndex(100)
+  cardSprite:moveTo(hoverPosition)
 end
 
 local function grabColumnCard(columnIndex, revealedIndex)
   local column = columns[columnIndex]
-  local revealedCard = column.revealedCards and column.revealedCards:nth(revealedIndex)
+  local revealedCard = List.nthNode(column.revealedCards, revealedIndex)
   if not revealedCard then return end
 
   cursorSprite:setImage(cursorGrabImage)
@@ -515,17 +607,19 @@ local function grabColumnCard(columnIndex, revealedIndex)
   returnTo = { to = "column", columnIndex = columnIndex }
 
   local currentCursorPosition = cursorPosition()
-  for i, node in holdingCard:iter_nodes() do
-    local cardSprite = cardSprites[node.card]
+  for i, card in List.iter(holdingCard) do
+    local cardSprite = cardSprites[card]
     local hoverPosition = currentCursorPosition + HOLDING_CARD_OFFSET
+    hoverPosition.y = hoverPosition.y + (i - 1) * CARD_GAP_Y
     cardSprite:setZIndex(i + 100)
     cardSprite:moveTo(hoverPosition)
   end
 end
 
+local cursorAnimOffset = geo.vector2D.new(0, 3)
 local function setCursorIdleAnimation()
-  local line = geo.lineSegment.new(cursorSprite.x, cursorSprite.y, cursorSprite.x, cursorSprite.y + 3)
-  local anim = gfx.animator.new(500, line)
+  local currentPosition = cursorPosition()
+  local anim = gfx.animator.new(500, currentPosition, currentPosition + cursorAnimOffset)
   anim.repeatCount = -1
   anim.reverses = true
   cursorAnimator = anim
@@ -544,7 +638,7 @@ cursorSprite:moveTo(cursorPosition())
 setCursorIdleAnimation()
 local nextCursors = getNextCursors()
 
-function playdate.update()
+local function handleInputs()
   for direction, nextCursor in pairs(nextCursors) do
     if playdate.buttonJustPressed(direction) then
       -- animate the cursor to the next position
@@ -556,36 +650,50 @@ function playdate.update()
       cursorAnimator = anim
       cursorSprite:setAnimator(anim)
 
-      if holdingCard then
-        for i, node in holdingCard:iter_nodes() do
-          local cardSprite = cardSprites[node.card]
-          local hoverPosition = position + HOLDING_CARD_OFFSET
-
-          local line = geo.lineSegment.new(cardSprite.x, cardSprite.y, hoverPosition.x, hoverPosition.y)
-          local anim = gfx.animator.new(150, line, easeOutQuint, (i - 1) * 50)
-          cardSprite:setAnimator(anim)
-        end
+      for i, card in List.iter(holdingCard) do
+        local cardSprite = cardSprites[card]
+        local hoverPosition = position + HOLDING_CARD_OFFSET
+        hoverPosition.y = hoverPosition.y + (i - 1) * CARD_GAP_Y
+        local line = geo.lineSegment.new(cardSprite.x, cardSprite.y, hoverPosition.x, hoverPosition.y)
+        local anim = gfx.animator.new(150, line, easeOutQuint, (i - 1) * 50)
+        cardSprite:setAnimator(anim)
       end
 
       nextCursors = getNextCursors()
+      return
     end
   end
 
   if holdingCard then
     if playdate.buttonJustPressed("b") then
       dropHeldCard()
+      return
+    elseif playdate.buttonJustPressed("a") then
+      placeHeldCard()
+      return
     end
   elseif playdate.buttonJustPressed("a") then
     if cursor.on == "deck" then
       cycleDeck()
       nextCursors = getNextCursors()
+      return
     elseif cursor.on == "waste" then
       grabWasteCard()
+      return
+    elseif cursor.on == "foundation" then
+      ---@cast cursor CursorOnFoundation
+      grabFoundationCard(cursor.foundationIndex)
+      return
     elseif cursor.on == "column" then
       ---@cast cursor CursorOnColumn
       grabColumnCard(cursor.columnIndex, cursor.revealedIndex)
+      return
     end
   end
+end
+
+function playdate.update()
+  handleInputs()
 
   idleAnimation()
 
