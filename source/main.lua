@@ -167,7 +167,7 @@ end
 
 -- distribute deck to columns
 for columnIndex, column in ipairs(columns) do
-  for cardIndex = 1, columnIndex do
+  for _ = 1, columnIndex do
     local card = table.remove(deck)
     table.insert(column.hiddenCards, card)
   end
@@ -606,8 +606,13 @@ local function grabColumnCard(columnIndex, revealedIndex)
   holdingCard = revealedCard
   returnTo = { to = "column", columnIndex = columnIndex }
 
+  print("grabbed column card")
+  printTable(holdingCard)
+
   local currentCursorPosition = cursorPosition()
   for i, card in List.iter(holdingCard) do
+    print("grabColumnCard iter", i)
+    printTable(card)
     local cardSprite = cardSprites[card]
     local hoverPosition = currentCursorPosition + HOLDING_CARD_OFFSET
     hoverPosition.y = hoverPosition.y + (i - 1) * CARD_GAP_Y
@@ -655,7 +660,7 @@ local function handleInputs()
         local hoverPosition = position + HOLDING_CARD_OFFSET
         hoverPosition.y = hoverPosition.y + (i - 1) * CARD_GAP_Y
         local line = geo.lineSegment.new(cardSprite.x, cardSprite.y, hoverPosition.x, hoverPosition.y)
-        local anim = gfx.animator.new(150, line, easeOutQuint, (i - 1) * 50)
+        local anim = gfx.animator.new(150, line, easeOutQuint)
         cardSprite:setAnimator(anim)
       end
 
@@ -667,9 +672,11 @@ local function handleInputs()
   if holdingCard then
     if playdate.buttonJustPressed("b") then
       dropHeldCard()
+      nextCursors = getNextCursors()
       return
     elseif playdate.buttonJustPressed("a") then
       placeHeldCard()
+      nextCursors = getNextCursors()
       return
     end
   elseif playdate.buttonJustPressed("a") then
@@ -679,14 +686,17 @@ local function handleInputs()
       return
     elseif cursor.on == "waste" then
       grabWasteCard()
+      nextCursors = getNextCursors()
       return
     elseif cursor.on == "foundation" then
       ---@cast cursor CursorOnFoundation
       grabFoundationCard(cursor.foundationIndex)
+      nextCursors = getNextCursors()
       return
     elseif cursor.on == "column" then
       ---@cast cursor CursorOnColumn
       grabColumnCard(cursor.columnIndex, cursor.revealedIndex)
+      nextCursors = getNextCursors()
       return
     end
   end

@@ -21,7 +21,7 @@ function Column.promoteHidden(column)
 end
 
 ---@param column Column
----@return fun(): number, Card | nil
+---@return function, table, number
 function Column.iterHidden(column)
   return ipairs(column.hiddenCards)
 end

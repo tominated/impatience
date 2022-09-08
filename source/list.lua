@@ -41,7 +41,7 @@ end
 function List.nthNode(list, n)
   if not list then return nil end
   if n == 1 then return list end
-  return List.nth(list.next, n - 1)
+  return List.nthNode(list.next, n - 1)
 end
 
 ---@generic T
