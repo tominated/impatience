@@ -4,77 +4,85 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Invoke Build and Run script",
-      "type": "shell",
-      "command": "&",
+      "label": "ensure directory",
+      "command": "mkdir",
       "args": [
-        "${workspaceFolder}\\Build and Run (Simulator).ps1",
-        "-build",
-        "'${workspaceFolder}\\builds'",
-        "-source",
-        "'${workspaceFolder}\\source'",
-        "-name",
-        "'${workspaceFolderBasename}'"
+        "-p",
+        "builds",
       ],
+      "windows": {
+        "command": "cmd",
+        "args": [
+          "/C",
+          "if not exist .\\builds mkdir .\\builds",
+        ],
+      },
+      "hide": true,
       "presentation": {
         "showReuseMessage": false,
         "reveal": "silent",
-        "panel": "shared"
-      }
-    },
-    {
-      "label": "Invoke Run script",
-      "type": "shell",
-      "command": "&",
-      "args": [
-        "${workspaceFolder}\\Build and Run (Simulator).ps1",
-        "-build",
-        "'${workspaceFolder}\\builds'",
-        "-source",
-        "'${workspaceFolder}\\source'",
-        "-name",
-        "'${workspaceFolderBasename}'",
-        "-dontbuild"
-      ],
-      "presentation": {
-        "showReuseMessage": false,
-        "reveal": "silent",
-        "panel": "shared"
-      }
-    },
-    {
-      "label": "Build and Run (Simulator)",
-      "dependsOn": [
-        "Invoke Build and Run script"
-      ],
-      "dependsOrder": "sequence",
-      "presentation": {
-        "showReuseMessage": false,
-        "reveal": "silent",
+        "focus": false,
+        "revealProblems": "onProblem",
         "panel": "shared"
       },
-      "problemMatcher": [],
+    },
+    {
+      "label": "Build",
+      "command": "${env:PLAYDATE_SDK_PATH}/bin/pdc",
+      "args": [
+        "source",
+        "builds/${workspaceFolderBasename}.pdx"
+      ],
+      "windows": {
+        "command": "${env:PLAYDATE_SDK_PATH}\\bin\\pdc.exe",
+        "args": [
+          "source",
+          "builds\\${workspaceFolderBasename}.pdx"
+        ]
+      },
+      "dependsOn": [
+        "ensure directory"
+      ],
       "group": {
         "kind": "build",
         "isDefault": true
-      }
-    },
-    {
-      "label": "Run (Simulator)",
-      "dependsOn": [
-        "Invoke Run script"
-      ],
-      "dependsOrder": "sequence",
+      },
       "presentation": {
+        "echo": true,
         "showReuseMessage": false,
         "reveal": "silent",
+        "focus": false,
+        "revealProblems": "onProblem",
         "panel": "shared"
       },
-      "problemMatcher": [],
+    },
+    {
+      "label": "Run",
+      "osx": {
+        "command": "open",
+        "args": [
+          "${env:PLAYDATE_SDK_PATH}/bin/Playdate Simulator.app",
+          "builds/${workspaceFolderBasename}.pdx"
+        ]
+      },
+      "windows": {
+        "type": "shell",
+        "command": "& ${env:PLAYDATE_SDK_PATH}/bin/PlaydateSimulator.exe builds/${workspaceFolderBasename}.pdx"
+      },
+      "dependsOn": [
+        "Build"
+      ],
       "group": {
         "kind": "test",
         "isDefault": true
-      }
+      },
+      "presentation": {
+        "showReuseMessage": false,
+        "reveal": "silent",
+        "focus": false,
+        "revealProblems": "onProblem",
+        "panel": "shared"
+      },
     }
   ]
 }
