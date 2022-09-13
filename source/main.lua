@@ -86,6 +86,22 @@ local holdingCard
 ---@type ReturnTo | nil
 local returnTo
 
+---@type number[]
+local dirtyColumns = {}
+
+---@type number[]
+local dirtyFoundations = {}
+
+---@type boolean
+local dirtyCursorPointing = false
+
+---@type boolean
+local dirtyCursorPosition = false
+
+---@type boolean
+local shouldShakeCursor = false
+
+
 local cursorPointImage = gfx.image.new("images/cursor-point")
 local cursorGrabImage = gfx.image.new("images/cursor-grab")
 local cursorSprite = gfx.sprite.new(cursorPointImage)
@@ -403,12 +419,6 @@ local function settleCardsInColumn(columnIndex)
   end
 end
 
-local function settleCardsInAllColumns()
-  for columnIndex, _ in ipairs(columns) do
-    settleCardsInColumn(columnIndex)
-  end
-end
-
 local function settleCardsInFoundation(foundationIndex)
   local foundation = foundations[foundationIndex]
 
@@ -445,6 +455,59 @@ local function settleCardsInFoundation(foundationIndex)
   end
 end
 
+local function settleHeldCards()
+  local position = cursorPosition()
+
+  for i, card in List.iter(holdingCard) do
+    local cardSprite = cardSprites[card]
+    local hoverPosition = position + HOLDING_CARD_OFFSET
+    hoverPosition.y = hoverPosition.y + (i - 1) * CARD_GAP_Y
+
+    if cardSprite.y ~= hoverPosition.y or cardSprite.x ~= hoverPosition.x then
+      local line = geo.lineSegment.new(cardSprite.x, cardSprite.y, hoverPosition.x, hoverPosition.y)
+      local anim = gfx.animator.new(150, line, easeOutQuint)
+      cardSprite:setAnimator(anim)
+    end
+
+    cardSprite:setZIndex(100 + i)
+  end
+end
+
+local function settleDirty()
+  for _, columnIndex in ipairs(dirtyColumns) do
+    settleCardsInColumn(columnIndex)
+  end
+
+  dirtyColumns = {}
+
+  for _, foundationIndex in ipairs(dirtyFoundations) do
+    settleCardsInFoundation(foundationIndex)
+  end
+
+  dirtyFoundations = {}
+
+  if dirtyCursorPointing then
+    cursorSprite:removeAnimator()
+    cursorSprite:setImage(holdingCard and cursorGrabImage or cursorPointImage)
+    settleHeldCards()
+  end
+
+  dirtyCursorPointing = false
+
+  if dirtyCursorPosition then
+    local position = cursorPosition()
+
+    local line = geo.lineSegment.new(cursorSprite.x, cursorSprite.y, position.x, position.y)
+    local anim = gfx.animator.new(150, line, easeOutQuint)
+    cursorAnimator = anim
+    cursorSprite:setAnimator(anim)
+
+    settleHeldCards()
+  end
+
+  dirtyCursorPosition = false
+end
+
 local function dropHeldCard()
   if not holdingCard then return end
   if not returnTo then return end
@@ -458,27 +521,44 @@ local function dropHeldCard()
     cardSprite:setAnimator(anim)
   elseif returnTo.to == "foundation" then
     ---@cast returnTo ReturnToFoundation
-    settleCardsInFoundation(returnTo.foundationIndex)
+    table.insert(dirtyFoundations, returnTo.foundationIndex)
   elseif returnTo.to == "column" then
     ---@cast returnTo ReturnToColumn
-    settleCardsInColumn(returnTo.columnIndex)
+    table.insert(dirtyColumns, returnTo.columnIndex)
   end
 
-  cursorSprite:setImage(cursorPointImage)
   holdingCard = nil
   returnTo = nil
+  dirtyCursorPointing = true
 end
 
-local cursorShakeOffset = geo.vector2D.new(2, 0)
+local shakeOffset = geo.vector2D.new(2, 0)
+
 local function shakeCursor()
-  local currentPosition = cursorPosition()
-  local leftOfCursor = currentPosition - cursorShakeOffset
-  local rightOfCursor = currentPosition + cursorShakeOffset
-  local leftToRight = leftOfCursor .. rightOfCursor
-  local rightToLeft = rightOfCursor .. leftOfCursor
-  local anim = gfx.animator.new(150, { leftToRight, rightToLeft, leftToRight }, {})
+  local position = cursorPosition()
+  local leftOfCursor = position - shakeOffset
+  local rightOfCursor = position + shakeOffset
+  local paths = { leftOfCursor .. rightOfCursor, rightOfCursor .. leftOfCursor, leftOfCursor .. position }
+  local anim = gfx.animator.new(150, paths)
   cursorAnimator = anim
   cursorSprite:setAnimator(anim)
+end
+
+local function shakeHeldCards()
+  local position = cursorPosition()
+
+  for i, card in List.iter(holdingCard) do
+    local cardSprite = cardSprites[card]
+    local hoverPosition = position + HOLDING_CARD_OFFSET
+    hoverPosition.y = hoverPosition.y + (i - 1) * CARD_GAP_Y
+
+    local leftPos = hoverPosition - shakeOffset
+    local rightPos = hoverPosition + shakeOffset
+    local paths = { leftPos .. rightPos, rightPos .. leftPos, leftPos .. hoverPosition }
+    local anim = gfx.animator.new(150, paths)
+    cardSprite:removeAnimator()
+    cardSprite:setAnimator(anim)
+  end
 end
 
 local function placeHeldCard()
@@ -509,6 +589,7 @@ local function placeHeldCard()
     local foundationCard = List.last(foundation)
 
     if not Card.canBuildUp(foundationCard, holdingCard.value) then
+      shouldShakeCursor = true
       return
     end
 
@@ -518,16 +599,16 @@ local function placeHeldCard()
       ---@cast returnTo ReturnToColumn
       local column = columns[returnTo.columnIndex]
       column.revealedCards = List.remove_sublist(column.revealedCards, holdingCard)
-      settleCardsInColumn(returnTo.columnIndex)
+      table.insert(dirtyColumns, returnTo.columnIndex)
     elseif returnTo.to == "waste" then
       ---@cast returnTo ReturnToWaste
       waste = List.remove_sublist(waste, holdingCard)
     end
 
-    cursorSprite:setImage(cursorPointImage)
     holdingCard = nil
     returnTo = nil
-    settleCardsInFoundation(cursor.foundationIndex)
+    dirtyCursorPointing = true
+    table.insert(dirtyFoundations, cursor.foundationIndex)
   elseif cursor.on == "column" then
     ---@cast cursor CursorOnColumn
 
@@ -538,7 +619,10 @@ local function placeHeldCard()
     local destColumnCard = List.last(destColumn.revealedCards)
     print("column card")
     printTable(destColumnCard)
-    if not Card.canBuildDown(destColumnCard, holdingCard.value) then return end
+    if not Card.canBuildDown(destColumnCard, holdingCard.value) then
+      shouldShakeCursor = true
+      return
+    end
 
     destColumn.revealedCards = List.concat(destColumn.revealedCards, holdingCard)
 
@@ -546,16 +630,16 @@ local function placeHeldCard()
       ---@cast returnTo ReturnToColumn
       local srcColumn = columns[returnTo.columnIndex]
       srcColumn.revealedCards = List.remove_sublist(srcColumn.revealedCards, holdingCard)
-      settleCardsInColumn(returnTo.columnIndex)
+      table.insert(dirtyColumns, returnTo.columnIndex)
     elseif returnTo.to == "waste" then
       ---@cast returnTo ReturnToWaste
       waste = List.remove_sublist(waste, holdingCard)
     end
 
-    cursorSprite:setImage(cursorPointImage)
     holdingCard = nil
     returnTo = nil
-    settleCardsInColumn(cursor.columnIndex)
+    dirtyCursorPointing = true
+    table.insert(dirtyColumns, cursor.columnIndex)
   end
 end
 
@@ -563,18 +647,11 @@ local function grabWasteCard()
   local wasteCard = List.lastNode(waste)
   if not wasteCard then return end
 
-  cursorSprite:setImage(cursorGrabImage)
-  cursorSprite:removeAnimator()
-
   holdingCard = wasteCard
   returnTo = { to = "waste" }
   ---@cast holdingCard Card
 
-  local currentCursorPosition = cursorPosition()
-  local cardSprite = cardSprites[wasteCard.value]
-  local hoverPosition = currentCursorPosition + HOLDING_CARD_OFFSET
-  cardSprite:setZIndex(100)
-  cardSprite:moveTo(hoverPosition)
+  dirtyCursorPointing = true
 end
 
 local function grabFoundationCard(foundationIndex)
@@ -582,17 +659,10 @@ local function grabFoundationCard(foundationIndex)
   local nodeToHold = foundation and List.lastNode(foundation)
   if not nodeToHold then return end
 
-  cursorSprite:setImage(cursorGrabImage)
-  cursorSprite:removeAnimator()
-
   holdingCard = nodeToHold
   returnTo = { to = "foundation", foundationIndex = foundationIndex }
 
-  local currentCursorPosition = cursorPosition()
-  local cardSprite = cardSprites[nodeToHold.value]
-  local hoverPosition = currentCursorPosition + HOLDING_CARD_OFFSET
-  cardSprite:setZIndex(100)
-  cardSprite:moveTo(hoverPosition)
+  dirtyCursorPointing = true
 end
 
 local function grabColumnCard(columnIndex, revealedIndex)
@@ -600,25 +670,10 @@ local function grabColumnCard(columnIndex, revealedIndex)
   local revealedCard = List.nthNode(column.revealedCards, revealedIndex)
   if not revealedCard then return end
 
-  cursorSprite:setImage(cursorGrabImage)
-  cursorSprite:removeAnimator()
-
   holdingCard = revealedCard
   returnTo = { to = "column", columnIndex = columnIndex }
 
-  print("grabbed column card")
-  printTable(holdingCard)
-
-  local currentCursorPosition = cursorPosition()
-  for i, card in List.iter(holdingCard) do
-    print("grabColumnCard iter", i)
-    printTable(card)
-    local cardSprite = cardSprites[card]
-    local hoverPosition = currentCursorPosition + HOLDING_CARD_OFFSET
-    hoverPosition.y = hoverPosition.y + (i - 1) * CARD_GAP_Y
-    cardSprite:setZIndex(i + 100)
-    cardSprite:moveTo(hoverPosition)
-  end
+  dirtyCursorPointing = true
 end
 
 local cursorAnimOffset = geo.vector2D.new(0, 3)
@@ -648,22 +703,7 @@ local function handleInputs()
     if playdate.buttonJustPressed(direction) then
       -- animate the cursor to the next position
       cursor = nextCursor
-      local position = cursorPosition()
-
-      local line = geo.lineSegment.new(cursorSprite.x, cursorSprite.y, position.x, position.y)
-      local anim = gfx.animator.new(150, line, easeOutQuint)
-      cursorAnimator = anim
-      cursorSprite:setAnimator(anim)
-
-      for i, card in List.iter(holdingCard) do
-        local cardSprite = cardSprites[card]
-        local hoverPosition = position + HOLDING_CARD_OFFSET
-        hoverPosition.y = hoverPosition.y + (i - 1) * CARD_GAP_Y
-        local line = geo.lineSegment.new(cardSprite.x, cardSprite.y, hoverPosition.x, hoverPosition.y)
-        local anim = gfx.animator.new(150, line, easeOutQuint)
-        cardSprite:setAnimator(anim)
-      end
-
+      dirtyCursorPosition = true
       nextCursors = getNextCursors()
       return
     end
@@ -704,6 +744,14 @@ end
 
 function playdate.update()
   handleInputs()
+
+  settleDirty()
+
+  if shouldShakeCursor then
+    shakeCursor()
+    shakeHeldCards()
+    shouldShakeCursor = false
+  end
 
   idleAnimation()
 
